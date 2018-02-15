@@ -1,0 +1,275 @@
+---
+title: "Bank Note Authentication"
+output:
+  html_document:
+    toc: true
+---
+
+# Prediction Function
+
+```{r}
+assess.prediction=function(truth,predicted){
+  predited = predicted[!is.na(truth)]
+  truth = truth[!is.na(truth)]
+  truth = truth[!is.na(predicted)]
+  predicted = predicted[!is.na(predicted)]
+  cat("Total Cases that are not NA:",length(truth),"\n",sep="")
+  cat("Correct Predictions (accuracy):",sum(truth == predicted),"(",signif(sum(truth==predicted)*100/length(truth),3),"%)\n",sep="")
+  TP = sum(truth==1 & predicted==1)
+  TN = sum(truth==0 & predicted==0)
+  FP = sum(truth==0 & predicted==1)
+  FN = sum(truth==1 & predicted==0)
+  P = TP+FN
+  N = FP+TN
+  
+  cat("TPR(sensitivity)=TP/P:",signif(100*TP/P,3),"%n",sep="","\n")
+  cat("TNR(specificity)=TN/N:",signif(100*TN/N,3),"%n",sep="","\n")
+  cat("PPV(Precision)=TP/(TP+FP):",signif(100*TP/(TP+FP),3),"%n",sep="","\n")
+  cat("FPR(False Discovery)=1-PPV:",signif(100*FP/(TP+FP),3),"%n",sep="","\n")
+  cat("FPR=FP/N=1-TNR:",signif(100*FP/N,3),"%n",sep="")
+}
+
+assess.prediction.values=function(truth,predicted){
+  predited = predicted[!is.na(truth)]
+  truth = truth[!is.na(truth)]
+  truth = truth[!is.na(predicted)]
+  predicted = predicted[!is.na(predicted)]
+
+  TP = sum(truth==1 & predicted==1)
+  TN = sum(truth==0 & predicted==0)
+  FP = sum(truth==0 & predicted==1)
+  FN = sum(truth==1 & predicted==0)
+  P = TP+FN
+  N = FP+TN
+  
+  return(list(ACC=signif(sum(truth==predicted)*100/length(truth),3),TPR=signif(100*TP/P,3),TNR=signif(100*TN/N,3),PPV=signif(100*TP/(TP+FP),3),FD=signif(100*FP/(TP+FP),3),FPR=signif(100*FP/N,3)))
+  
+}
+
+```
+
+
+# Logistic regression
+
+
+```{r}
+BankNotedata <- read.table("data_banknote_authentication.txt",sep=",",header=FALSE,quote="")
+Cor_pearson <- cor(BankNotedata,method="pearson")
+Cor_pearson
+
+```
+
+The pearson correlation demonstrates that V1 is significantly associated with the categorical outcome and the value of correlation is -0.72.
+```{r}
+
+glm.fit = glm(V5~V1+V2+V3+V4,data = BankNotedata, family = binomial())
+summary(glm.fit)
+
+```
+
+Above is the summary of logistic regression. The Pr value for V4 (0.0672) shows that the variable is not highly associated with V5.
+
+```{r}
+
+pred = predict(glm.fit,BankNotedata,type="response")
+table(pred>0.5, BankNotedata[,"V5"])
+
+```
+
+We see from the confusion matrix above that logistic regression does good prediction with classifying the values. 
+However it should be noted that the training and testing are performed on the same dataset.
+
+```{r}
+assess.prediction(BankNotedata[,"V5"],ifelse(pred>0.5,1,0))
+```
+
+The above results show the accuracy as 99.2%. The error rate would be 0.08% (1-accuracy). The error rate in this scenario would be considered as a training error rate. Sensitivity is 99% and Specificity is 99.3% 
+
+
+# LDA and QDA
+
+
+```{r}
+
+library(MASS)
+lda.fit = lda(V5~V1+V2+V3+V4, data=BankNotedata)
+lda.fit
+table(predict(lda.fit)$class,BankNotedata[,"V5"])
+```
+
+The above output shows the confusion matrix for LDA. LDA does good job in predicting 1s but not such a good job with predicting 0s compared to logistic regression.
+
+```{r}
+
+assess.prediction(BankNotedata[,"V5"],ifelse(predict(lda.fit)$posterior[,2]>0.5,1,0))
+```
+The above table shows accuracy for  LDA is 97.7%. The error rate is 2.3% (1-accuracy). The sensitivity is 100% which means LDA is predicting all 1s very well but has specificity 95.8% that means it has error rate of 4.2% in predicting 0s.
+
+```{r}
+qda.fit = qda(V5~V1+V2+V3+V4, data=BankNotedata)
+qda.fit
+table(predict(qda.fit)$class,BankNotedata[,"V5"])
+```
+
+The above output shows the confusion matrix for QDA. QDA does good job in predicting 1s but not such a good job with predicting 0s compared to logistic regression. But still better than LDA.
+
+```{r}
+assess.prediction(BankNotedata[,"V5"],ifelse(predict(qda.fit)$posterior[,2]>0.5,1,0))
+```
+
+The above table shows accuracy for  QDA is 98.5%. The error rate is 1.5% (1-accuracy). The sensitivity is 100% which means QDA is predicting all 1s very well but has specificity 97.4% that means it has error rate of 2.6% in predicting 0s.
+
+# KNN
+
+
+```{r}
+library(FNN)
+knn.pred.1 = knn(train = BankNotedata, test = BankNotedata,cl = BankNotedata[,"V5"],k=1)
+table(knn.pred.1,BankNotedata[,"V5"])
+
+```
+
+The above output shows the confusion matrix for Knn with k=1. Knn predicts every point correctly which indicates that it might be overfitting the data. As the classification is on training data set.
+
+```{r}
+assess.prediction(BankNotedata[,"V5"],knn.pred.1)
+```
+
+
+The above table shows accuracy for  Knn with K=1 is 100%. It can be expected that knn classifies all the data points perfectly because we are doing the classification on training data set and knn overfits the data.
+
+```{r}
+knn.pred.10 = knn(train = BankNotedata, test = BankNotedata,cl = BankNotedata[,"V5"],k=10)
+table(knn.pred.10,BankNotedata[,"V5"])
+
+```
+
+The confusion matrix is same regardless of k value in case of Knn.
+
+```{r}
+assess.prediction(BankNotedata[,"V5"],knn.pred.10)
+```
+
+As seen with k=1 the knn classification with k=10 has same accuracy of 100%. The specificity and sensitivity are 100%
+
+
+# Comparing test errors of logistic regression, LDA, QDA and KNN
+
+
+```{r}
+dfTmp <- NULL
+dfTmp1<-NULL
+dfTmp2<-NULL
+knnTmpErr<-NULL
+knnTmpErrsplit<-NULL
+knnTmpSen <- NULL
+knnTmpSpe <- NULL
+knnTmp <- NULL
+logtesterror <- NULL
+ldatesterror <- NULL
+qdatesterror <- NULL
+knnoutput <- NULL
+Logoutput <- NULL
+ldaoutput <- NULL
+qdaoutput <- NULL
+knnoutput.1<-NULL
+knnoutput.2<-NULL
+knnoutput.5<-NULL
+knnoutput.10<-NULL
+knnoutput.20<-NULL
+knnoutput.50<-NULL
+knnoutput.100<-NULL
+
+nTries <- 10
+for ( iTry in 1:nTries ){
+  bTrain <- sample(rep(c(TRUE,FALSE),length.out=nrow(BankNotedata)))
+  glm.train <- glm(V5~V1+V2+V3+V4,data = BankNotedata[bTrain,], family = binomial())
+  Testdata = BankNotedata[!bTrain,]
+  pred = predict(glm.train,Testdata,type="response")
+  Logoutput[c("ACC","TPR","TNR","PPV","FDR","FPR")] =assess.prediction.values(Testdata[,"V5"],ifelse(pred>0.5,1,0))
+  logtesterror = 100-as.numeric(Logoutput["ACC"])
+  
+  
+  lda.fit = lda(V5~V1+V2+V3+V4, data=BankNotedata[bTrain,])
+  ldaoutput[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],ifelse(predict(lda.fit)$posterior[,2]>0.5,1,0))
+  ldatesterror <- 100-as.numeric(ldaoutput["ACC"])
+
+  
+  qda.fit = qda(V5~V1+V2+V3+V4, data=BankNotedata[bTrain,])
+  qdaoutput[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],ifelse(predict(qda.fit)$posterior[,2]>0.5,1,0))
+  qdatesterror <- 100-as.numeric(qdaoutput["ACC"])  
+  
+  knn.pred.1= knn(train = BankNotedata[bTrain,], test = Testdata,cl = Testdata[,"V5"],k=1)
+  knnoutput.1[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],knn.pred.1)
+  
+  knn.pred.2= knn(train = BankNotedata[bTrain,], test = Testdata,cl = Testdata[,"V5"],k=2)
+  knnoutput.2[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],knn.pred.2)
+
+  knn.pred.5= knn(train = BankNotedata[bTrain,], test = Testdata,cl = Testdata[,"V5"],k=5)
+  knnoutput.5[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],knn.pred.5)
+
+  knn.pred.10= knn(train = BankNotedata[bTrain,], test = Testdata,cl = Testdata[,"V5"],k=10)
+  knnoutput.10[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],knn.pred.10)
+  
+  knn.pred.20= knn(train = BankNotedata[bTrain,], test = Testdata,cl = Testdata[,"V5"],k=20)
+  knnoutput.20[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],knn.pred.20)
+  
+  knn.pred.50= knn(train = BankNotedata[bTrain,], test = Testdata,cl = Testdata[,"V5"],k=50)
+  knnoutput.50[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],knn.pred.50)
+  
+  knn.pred.100= knn(train = BankNotedata[bTrain,], test = Testdata,cl = Testdata[,"V5"],k=100)
+  knnoutput.100[c("ACC","TPR","TNR","PPV","FDR","FPR")] = assess.prediction.values(Testdata[,"V5"],knn.pred.100)
+  
+  
+    knnTmpErr <-rbind(knnTmpErr,data.frame(sim=iTry,Err=c(100-as.numeric(knnoutput.1["ACC"]),100-as.numeric(knnoutput.2["ACC"]),100-as.numeric(knnoutput.5["ACC"]),100-as.numeric(knnoutput.10["ACC"])),meth=c("1","2","5","10")))
+    
+    knnTmpErrsplit <-rbind(knnTmpErrsplit,data.frame(sim=iTry,Err=c(100-as.numeric(knnoutput.20["ACC"]),100-as.numeric(knnoutput.50["ACC"]),100-as.numeric(knnoutput.100["ACC"])),meth=c("20","50","100")))
+    
+    knnTmpSen<-rbind(knnTmpSen,data.frame(sim=iTry,Sensitivity=c(as.numeric(knnoutput.1["TPR"]),as.numeric(knnoutput.2["TPR"]),as.numeric(knnoutput.5["TPR"]),as.numeric(knnoutput.10["TPR"]),as.numeric(knnoutput.20["TPR"]),as.numeric(knnoutput.50["TPR"]),as.numeric(knnoutput.100["TPR"])),meth=c("1","2","5","10","20","50","100")))
+
+    knnTmpSpe<-rbind(knnTmpSpe,data.frame(sim=iTry,Specificity=c(as.numeric(knnoutput.1["TNR"]),as.numeric(knnoutput.2["TNR"]),as.numeric(knnoutput.5["TNR"]),as.numeric(knnoutput.10["TNR"]),as.numeric(knnoutput.20["TNR"]),as.numeric(knnoutput.50["TNR"]),as.numeric(knnoutput.100["TNR"])),meth=c("1","2","5","10","20","50","100")))
+    
+      dfTmp <- rbind(dfTmp,data.frame(sim=iTry,Err=c(logtesterror,ldatesterror,qdatesterror),meth=c("LOG","LDA","QDA")))
+  dfTmp1 <- rbind(dfTmp1,data.frame(sim=iTry,Sensitivity=c(as.numeric(Logoutput["TPR"]),as.numeric(ldaoutput["TPR"]),as.numeric(qdaoutput["TPR"])),meth=c("LOG","LDA","QDA")))
+  dfTmp2 <- rbind(dfTmp2,data.frame(sim=iTry,Specificity=c(as.numeric(Logoutput["TNR"]),as.numeric(ldaoutput["TNR"]),as.numeric(qdaoutput["TNR"])),meth=c("LOG","LDA","QDA")))
+
+    
+}
+
+
+```
+```{r}
+library(ggplot2)
+ggplot(knnTmpErr,aes(x=factor(sim),y=Err,colour=meth)) + geom_boxplot()
+
+ggplot(knnTmpErrsplit,aes(x=factor(sim),y=Err,colour=meth)) + geom_boxplot()
+
+
+
+```
+
+The above charts show Knn model for 10 sample data sets. To clearly separate the error rate for different K values, two charts are drawn. It can seen that the error rate is relatively higher for k=1, 2, 20,50 and 100. k =5 and k =10 relatively perform better.
+
+```{r}
+ggplot(knnTmpSen,aes(x=factor(sim),y=Sensitivity,colour=meth)) + geom_boxplot()
+ggplot(knnTmpSpe,aes(x=factor(sim),y=Specificity,colour=meth)) + geom_boxplot()
+
+```
+
+
+The above plots show Sensitiviy and Specificity for Knn method. Though it is a challenge to view the graph it can be said that the sensitivity and specificity are high for middle values of K = 5,10 and 20. 
+```{r}
+ggplot(dfTmp,aes(x=factor(sim),y=Err,colour=meth)) + geom_boxplot()+facet_wrap(~meth)
+
+
+```
+
+
+The above graph shows Error rate for LDA, Logistic regression and QDA. Logistic regression has least error rate compared to LDA and QDA. But it is still higher than Knn with K =5 and 10.
+```{r}
+ggplot(dfTmp1,aes(x=factor(sim),y=Sensitivity,colour=meth)) + geom_boxplot()+facet_wrap(~meth)
+ggplot(dfTmp2,aes(x=factor(sim),y=Specificity,colour=meth)) + geom_boxplot()+facet_wrap(~meth)
+```
+
+The above graphs show sensitivity and specificity for LDA, LOG and QDA methods. The sensitivity and specificity are better for Logistic regression compared to LDA and QDA. As with the error rate the sensitivity and specificity for Knn method with K=5 and 10 is better than logistic regression.
+
