@@ -1,0 +1,229 @@
+---
+title: 'World Health Data'
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+library(cluster)
+library(ISLR)
+library(MASS)
+library(ggplot2)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading of data
+```{r WHS}
+whsAnnBdatNum <- read.table("whs2016_AnnexB-data-wo-NAs.txt",sep="\t",header=TRUE,quote="")
+summary(whsAnnBdatNum[,c(1,4,7,10,17)])
+pairs(whsAnnBdatNum[,c(1,4,7,10,17)])
+```
+
+
+# Principal components analysis (PCA) 
+
+
+
+## Means and Variances of WHS attributes 
+
+Comparing means and variances of the *untransformed* attributes in the world health statisics dataset 
+
+```{r}
+Datapoints_mean = apply(whsAnnBdatNum,2,mean)
+Datapoints_var = apply(whsAnnBdatNum,2,var)
+plot(Datapoints_mean,Datapoints_var,log="xy")
+
+
+```
+
+The above graph displays means vs variances. Top 2 points and bottom 1 point have different means and variances as compared to the rest of the dataset. 
+
+```{r}
+range(Datapoints_mean, na.rm = FALSE)
+range(Datapoints_var,na.rm=FALSE)
+
+```
+
+The first row above is the range for mean and second column is the range for variance. Variance is very high compared to mean just by looking at the graph it can be said that variance is increasing as mean increases except for few points.
+
+```{r}
+sort(apply(whsAnnBdatNum,2,mean),decreasing = TRUE)
+```
+The top 2 attributes with highest mean are INTINTDS and TOTPOP.
+
+
+## PCA on untransformed and scaled WHS data 
+
+Obtaining results of principal components analysis of the data (by using `prcomp`)
+```{r}
+PCAunscaled = prcomp(whsAnnBdatNum,scale = FALSE)
+PCAscaled = prcomp(whsAnnBdatNum,scale = TRUE)
+```
+
+Principal component analysis of unscaled data is stored in PCAunscaled and the result of scaled data is stored in PCAscaled.
+
+Generating scree plot of PCA results (by calling `plot` on the result of `prcomp`)
+```{r}
+plot(PCAunscaled)
+plot(PCAscaled)
+```
+The above graphs show the scree plot for unscaled and scaled data. In case of unscaled data, the variance is dominated by only one variable to the extent that others are negligible.In case of scaled data, though one variable is dominating other variables contribution is considered towards total varia.
+
+
+```{r}
+biplot(PCAscaled)
+plot(PCAscaled$x[,1:2])
+include_list = c("India","China")
+s <- PCAscaled$x[include_list,]
+text(s[,1:2],labels=rownames(s))
+
+plot(PCAscaled$x[,1:2])
+include_list1 = c("UnitedStatesofAmerica", "UnitedKingdom", "China", "India", "Mexico", "Australia", "Israel", "Italy", "Ireland","Sweden")
+s1 <- PCAscaled$x[include_list1,]
+text(s1[,1:2],labels=rownames(s1))
+```
+
+The countries US, UK, China, Mexico, Australia, Israel, Italy, Ireland and Sweden are closer to each as against to India. The mentioned countries are closer to negative values of PC1 and PC2 almost in the 4th quandrant.
+
+```{r}
+biplot(PCAunscaled)
+plot(PCAunscaled$x[,1:2])
+s <- PCAscaled$x[include_list,]
+text(s[,1:2],labels=rownames(s))
+```
+
+The above graph shows high number of warnings encountered for unscaled scenario. The text for India and China is also not visible for unscaled data. 
+  
+
+
+```{r}
+PCAscaled$rotation[,1:2]
+```
+
+The attribute that have largest PC1 is LIFEXPB.F the attribute with largest PC2 is HOMICIDE.
+```{r}
+PCAunscaled$rotation[,1:2]
+```
+
+The attribute that have largest PC1 is INTINTDS and the attribute that have largest PC2 is TOTPOP which is the same in case of mean vs variance analysis.
+
+```{r}
+pcascaledvar = PCAscaled$sdev[1:5]^2
+pcascaledvar
+pve = pcascaledvar/sum(pcascaledvar)
+pve
+```
+The first principal component explains 63% of the variance in the data. the next principal component explains 10% of the data.
+
+```{r}
+pcaunscaledvar = PCAunscaled$sdev[1:5]^2
+pcaunscaledvar
+pve = pcaunscaledvar/sum(pcaunscaledvar)
+pve
+```
+The first principal component explains 99.9% of the data, the second principal component explains negligible variance in the data.
+
+Now that you have PCA results when applied to untransformed and scaled WHS data, please comment on how do they compare and what is the effect of scaling?  What dataset attributes contribute the most (by absolute value) to the top two principal components in each case (untransformed and scaled data)?  What are the signs of those contributions?  How do you interpret that?
+
+Please note, that the output of `biplot` with almost 200 text labels on it can be pretty busy and tough to read.  You can achieve better control when plotting PCA results if instead you plot the first two columns of the `x` attribute in the output of `prcomp` -- e.g. `plot(prcomp(USArrests,scale=T)$x[,1:2])`.  Then given this plot you can label a subset of countries on the plot by using `text` function in R to add labels at specified positions on the plot.  Please feel free to choose several countries of your preference and discuss the results.  Alternatively, indicate US, UK, China, India, Mexico, Australia, Israel, Italy, Ireland and Sweden and discuss the results.  Where do the countries you have plotted fall in the graph?  Considering what you found out about contributions of different attributes to the first two PCs, what do their positions tell us about their (dis-)similarities in terms of associated health statistics?
+
+
+# K-means clustering 
+
+
+
+## k-means clusters of different size
+
+
+```{r}
+scaledwhs = scale(whsAnnBdatNum)
+km = kmeans(scale(whsAnnBdatNum),2)
+plot(prcomp(scaledwhs)$x[,1:2],col=km$cluster)
+sort(km$cluster)
+
+```
+
+The above graph displays the clusters for K=2. The list of countries displayed shows the cluster group that it is associated to. Countries like Afganistan, Angola, India, Kenya are in group 1, countries like Albania, Argentina, Australia etc are in group 2.
+
+```{r}
+km = kmeans(scale(whsAnnBdatNum),3)
+plot(prcomp(scaledwhs)$x[,1:2],col=km$cluster)
+sort(km$cluster)
+
+```
+
+The above graph displays the clusters for K=3. The list of countries displayed shows the cluster group that it is associated to. Countries like Afganistan, Angola, India, Kenya are in group 1, countries like Albania, Argentina, Australia etc are in group 2 and Botswana, Lesotho, Namibia, SouthAfrica,Swaziland and Zimbabwe are in group 3.
+
+```{r}
+km = kmeans(scale(whsAnnBdatNum),4)
+plot(prcomp(scaledwhs)$x[,1:2],col=km$cluster)
+sort(km$cluster)
+
+```
+
+
+The above graph displays the clusters for K=3. The list of countries displayed shows the cluster group that it is associated to. Countries like Albania, Armenia, China are in group 1, countries like Austria, Belgium, Australia etc are in group 2 and Argentina, Bahamas, Brazil etc are in group 3, countries like Afganistan, Angola, India, etc are in group 4.
+
+## Variability of k-means clustering and effect of `nstart` parameter 
+
+
+
+```{r}
+nstart = c(1,100)
+nseed = c(1,2,3)
+for (x in nstart)
+{
+  for(y in nseed)
+  {
+    set.seed(y)
+    km4=kmeans(scale(whsAnnBdatNum),4,nstart = x)
+    plot(prcomp(scaledwhs)$x[,1:2],col=km4$cluster)
+    print(km4$tot.withinss/km4$betweenss)
+  }
+}
+
+```
+ 
+The ratio of within to between sum-of-squares for default nstart and Seed 1 is 1.39 and for seed 2 is 1.47 and for seed 3 is 1.58. In case of higher than 1 nstart the value of ration of within to between sum of squares is 1.39 for all seeds. The reason for this is when nstart = 100 the start point in changed for each execution and kmeans is executed multiple times and best result is fetched. if nstart is low then undesirable local optimum can be obtained.
+
+
+# Hierarchical clustering 
+
+## Hierachical clustering by different linkages
+
+
+```{r}
+hc.complete =hclust (dist(scaledwhs), method ="complete")
+plot(hc.complete ,main ="Complete Linkage", xlab="", sub ="",
+cex =.9)
+hc.average =hclust (dist(scaledwhs), method ="average")
+plot(hc.complete ,main ="Average Linkage", xlab="", sub ="",
+cex =.9)
+hc.single =hclust (dist(scaledwhs), method ="single")
+plot(hc.complete ,main ="Single Linkage", xlab="", sub ="",
+cex =.9)
+hc.ward =hclust (dist(scaledwhs), method ="ward.D")
+plot(hc.complete ,main ="Ward Linkage", xlab="", sub ="",
+cex =.9)
+
+hc.completeunscaled =hclust (dist(whsAnnBdatNum), method ="complete")
+plot(hc.completeunscaled ,main ="Complete Linkage", xlab="", sub ="",
+cex =.9)
+
+```
+
+Though the hierarchial graph is clumpsy, it can be observed that in scaled attributes scenario the clusters are separated but for unscaled scenario yielded extended clusters hence underlining the importance of scaling before performing clustering analysis.
+
+## Compare k-means and hierarchical clustering 
+
+
+```{r}
+cutree(hc.complete, 4)
+
+```
+```{r}
+table(cutree(hc.complete, 4), km4$cluster)
+```
+Analyzing the table matrix data. In case of hierarchial clustering the spread is more at 1st and 2nd level of the hierarchy, the third and fourth have only 1 data point. The clustering with nstart = 100 and seed = 3 and with cluster size 4 has 21 records in cluster1, 87 records in cluster 2, 46 records in cluster 3 and 34 records in cluster 4. The data is spread across all the clusters.
+
