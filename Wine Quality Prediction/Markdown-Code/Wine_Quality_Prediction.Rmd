@@ -1,0 +1,383 @@
+---
+title: "Wine Quality Prediction"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+library(glmnet)
+library(leaps)
+library(ggplot2)
+library(MASS)
+library(RColorBrewer)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load and summarize the data
+
+
+White Wine Data loading and Summary analysis:
+```{r}
+WhiteWine = read.csv(file = "winequality-white.csv", header = TRUE, sep =";")
+summary(WhiteWine)
+
+```
+
+Initial analysis of summary statistics reveal certain outliers for Residual Sugar, free sulfur dioxide etc. Lets look at the pairwise plot below.
+```{r}
+pairs(WhiteWine[])
+```
+The pairwise plot though not clear points to the direction that most of the data looks like a blob except for few outliers. 
+
+Red wine data loading and Summary Analysis:
+```{r}
+RedWine = read.csv(file = "winequality-red.csv", header = TRUE, sep =";")
+summary(RedWine)
+```
+
+The range of values and maximum values for residual sugar, free sulfur dioxide is different from white wine hinting at different types of concentration in the wines depending on the wine type
+```{r}
+pairs(RedWine[])
+```
+
+The pairwise plot for Red wine also reveals the same thing, most part of the data is just a blob with few outliers.
+
+Lets try to understand if any predictor variables is related to the outcome. Performing pearson correlation.
+```{r}
+Cor_pearson <- cor(WhiteWine,method="pearson")
+Cor_pearson
+
+```
+
+Among all the variables Alcohol has the highest correlation with the outcome variable in case of white wine. The correlation value of 0.43 is considered moderate correlation. Let us try to keep this variable in our analysis.
+```{r}
+Cor_pearson <- cor(RedWine,method="pearson")
+Cor_pearson
+```
+
+Among all the variables Alcohol has the highest correlation with the outcome variable in case of Red wine. The correlation value of 0.47 is considered moderate correlation. Let us try to keep this variable in our analysis.
+
+# Choose optimal models by exhaustive, forward and backward selection
+
+
+WhiteWine subset selection:
+```{r}
+summaryMetrics <- NULL
+whichAll <- list()
+for ( myMthd in c("exhaustive", "backward", "forward") ) {
+  rsRes <- regsubsets(quality~.,WhiteWine,method=myMthd,nvmax=10)
+  summRes <- summary(rsRes)
+  whichAll[[myMthd]] <- summRes$which
+  for ( metricName in c("rsq","rss","adjr2","cp","bic") ) {
+    summaryMetrics <- rbind(summaryMetrics,
+      data.frame(method=myMthd,metric=metricName,
+                nvars=1:length(summRes[[metricName]]),
+                value=summRes[[metricName]]))
+  }
+}
+ggplot(summaryMetrics,aes(x=nvars,y=value,shape=method,colour=method)) + geom_path() + geom_point() + facet_wrap(~metric,scales="free") +   theme(legend.position="top")
+```
+
+We can see that, all methods came up with models of very comparable performance by every associated metric. The number of optimal variables are 7, from 8the variable the reduction in error is very low or negligible. 
+
+```{r}
+old.par <- par(mfrow=c(2,2),ps=13,mar=c(2,10,2,2))
+for ( myMthd in names(whichAll) ) {
+  image(1:nrow(whichAll[[myMthd]]),
+        1:ncol(whichAll[[myMthd]]),
+        whichAll[[myMthd]],xlab="N(vars)",ylab="",
+        xaxt="n",yaxt="n",breaks=c(-0.5,0.5,1.5),
+        col=c("white","gray"),main=myMthd)
+  axis(1,1:nrow(whichAll[[myMthd]]),rownames(whichAll[[myMthd]]))
+  axis(2,1:ncol(whichAll[[myMthd]]),colnames(whichAll[[myMthd]]),las=2)
+}
+```
+In case of white wine the 7 variables selected by exhaustive, backward and forward selection methods are volatile acidity, residual sugar, free sulfur dioxide, density, pH, sulphates and alcohol.
+
+Red wine subset selection:
+```{r}
+summaryMetrics <- NULL
+whichAll <- list()
+for ( myMthd in c("exhaustive", "backward", "forward") ) {
+  rsRes <- regsubsets(quality~.,RedWine,method=myMthd,nvmax=10)
+  summRes <- summary(rsRes)
+  whichAll[[myMthd]] <- summRes$which
+  for ( metricName in c("rsq","rss","adjr2","cp","bic") ) {
+    summaryMetrics <- rbind(summaryMetrics,
+      data.frame(method=myMthd,metric=metricName,
+                nvars=1:length(summRes[[metricName]]),
+                value=summRes[[metricName]]))
+  }
+}
+ggplot(summaryMetrics,aes(x=nvars,y=value,shape=method,colour=method)) + geom_path() + geom_point() + facet_wrap(~metric,scales="free") +   theme(legend.position="top")
+```
+
+We can see that, all methods came up with models of very comparable performance by every associated metric. The number of optimal variables are 6, from 7th variable the reduction in error is very low or negligible. 
+
+```{r}
+old.par <- par(mfrow=c(2,2),ps=13,mar=c(2,10,2,2))
+for ( myMthd in names(whichAll) ) {
+  image(1:nrow(whichAll[[myMthd]]),
+        1:ncol(whichAll[[myMthd]]),
+        whichAll[[myMthd]],xlab="N(vars)",ylab="",
+        xaxt="n",yaxt="n",breaks=c(-0.5,0.5,1.5),
+        col=c("white","gray"),main=myMthd)
+  axis(1,1:nrow(whichAll[[myMthd]]),rownames(whichAll[[myMthd]]))
+  axis(2,1:ncol(whichAll[[myMthd]]),colnames(whichAll[[myMthd]]),las=2)
+}
+```
+
+In case of Red wine the 6 variables selected by exhaustive, backward and forward selection methods are volatile acidity, chlorides, total sulfur dioxide, pH, sulphates and alcohol. 
+
+Good point to observe here is that in case of white wine and red wine the subset parameters are different. Meaning that the parameters that influence quality of white wine are different from parameters that influence quality of red wine.
+
+# Optimal model by cross-validation
+
+
+Cross Validation on White wine:
+```{r}
+
+predict.regsubsets =function (object ,newdata ,id ,...){
+form=as.formula (object$call [[2]])
+mat=model.matrix (form ,newdata )
+coefi =coef(object ,id=id)
+xvars =names (coefi )
+mat[,xvars ]%*% coefi
+}
+
+dfTmp <- NULL
+whichSum <- array(0,dim=c(11,12,3),
+  dimnames=list(NULL,colnames(model.matrix(quality~.,WhiteWine)),
+      c("exhaustive", "backward", "forward")))
+nTries <- 30
+for ( iTry in 1:nTries ) {
+  bTrain <- sample(rep(c(TRUE,FALSE),length.out=nrow(WhiteWine)))
+  # Try each method available in regsubsets
+  # to select the best model of each size:
+  for ( jSelect in c("exhaustive", "backward", "forward") ) {
+    rsTrain <- regsubsets(quality~.,WhiteWine[bTrain,],nvmax=11,method=jSelect)
+    # Add up variable selections:
+    whichSum[,,jSelect] <- whichSum[,,jSelect] + summary(rsTrain)$which
+    # Calculate test error for each set of variables
+    # using predict.regsubsets implemented above:
+    for ( kVarSet in 1:11 ) {
+      # make predictions:
+      testPred <- predict(rsTrain,WhiteWine[!bTrain,],id=kVarSet)
+      # calculate MSE:
+      mseTest <- mean((testPred-WhiteWine[!bTrain,"quality"])^2)
+      # add to data.frame for future plotting:
+      dfTmp <- rbind(dfTmp,data.frame(sim=iTry,sel=jSelect,vars=kVarSet,
+      mse=c(mseTest,summary(rsTrain)$rss[kVarSet]/sum(bTrain)),trainTest=c("test","train")))
+    }
+  }
+}
+# plot MSEs by training/test, number of 
+# variables and selection method:
+ggplot(dfTmp,aes(x=factor(vars),y=mse,colour=sel)) + geom_boxplot()+facet_wrap(~trainTest)
+
+```
+
+In case of cross validation approach the training mse is around 0.56 for 7 variables. The test error is 0.58
+
+Cross validation for Red Wine:
+
+```{r}
+dfTmp <- NULL
+whichSum <- array(0,dim=c(11,12,3),
+  dimnames=list(NULL,colnames(model.matrix(quality~.,RedWine)),
+      c("exhaustive", "backward", "forward")))
+nTries <- 30
+for ( iTry in 1:nTries ) {
+  bTrain <- sample(rep(c(TRUE,FALSE),length.out=nrow(RedWine)))
+  # Try each method available in regsubsets
+  # to select the best model of each size:
+  for ( jSelect in c("exhaustive", "backward", "forward") ) {
+    rsTrain <- regsubsets(quality~.,RedWine[bTrain,],nvmax=11,method=jSelect)
+    # Add up variable selections:
+    whichSum[,,jSelect] <- whichSum[,,jSelect] + summary(rsTrain)$which
+    # Calculate test error for each set of variables
+    # using predict.regsubsets implemented above:
+    for ( kVarSet in 1:11 ) {
+      # make predictions:
+      testPred <- predict(rsTrain,RedWine[!bTrain,],id=kVarSet)
+      # calculate MSE:
+      mseTest <- mean((testPred-RedWine[!bTrain,"quality"])^2)
+      # add to data.frame for future plotting:
+      dfTmp <- rbind(dfTmp,data.frame(sim=iTry,sel=jSelect,vars=kVarSet,
+      mse=c(mseTest,summary(rsTrain)$rss[kVarSet]/sum(bTrain)),trainTest=c("test","train")))
+    }
+  }
+}
+# plot MSEs by training/test, number of 
+# variables and selection method:
+ggplot(dfTmp,aes(x=factor(vars),y=mse,colour=sel)) + geom_boxplot()+facet_wrap(~trainTest)
+```
+In case of cross validation approach the training mse is around 0.42 for 6 variables. The test error is 0.43
+
+
+# Lasso/Ridge 
+
+
+Ridge regression for White wine:
+```{r}
+x <- model.matrix(quality~.,WhiteWine)[,-1]
+y <- WhiteWine[,"quality"]
+ridgeRes <- glmnet(scale(x),y,alpha=0)
+plot(ridgeRes)
+cvRidgeRes <- cv.glmnet(scale(x),y,alpha=0)
+plot(cvRidgeRes)
+
+```
+Output of glmnet illustrates change in the contributions of each of the predictors as amount of shrinkage changes. The contribution variables are observed for some range of shrinkage changes. 
+
+Output of cv.glmnet shows averages and variabilities of MSE in cross-validation across different levels of regularization. lambda.min field indicates values of ?? (0.042) at which the lowest average MSE has been achieved, lambda.1se shows larger ?? (more regularization) that has MSE 1SD (of cross-validation) higher than the minimum - this is an often recommended ?? (0.225) to use under the idea that it will be less susceptible to overfit. 
+
+The below are coefficients for ridge regression for the fields lambda.min and lambda.lse 
+
+```{r}
+cvRidgeRes$lambda.min
+predict(ridgeRes,type="coefficients",s=cvRidgeRes$lambda.min)
+
+cvRidgeRes$lambda.1se
+predict(ridgeRes,type="coefficients",s=cvRidgeRes$lambda.1se)
+```
+
+Below is the coefficients for ridge regression for the fields with lambda other than default.
+
+```{r}
+# and with lambda's other than default:
+cvRidgeRes <- cv.glmnet(x,y,alpha=0,lambda=10^((-80:80)/20))
+plot(cvRidgeRes)
+ridgeResScaled <- glmnet(scale(x),y,alpha=0)
+cvRidgeResScaled <- cv.glmnet(scale(x),y,alpha=0)
+predict(ridgeResScaled,type="coefficients",s=cvRidgeResScaled$lambda.1se)
+```
+
+Below is the Lasso regression for white wine:
+
+```{r}
+lassoRes <- glmnet(scale(x),y,alpha=1)
+plot(lassoRes)
+cvLassoRes <- cv.glmnet(scale(x),y,alpha=1)
+plot(cvLassoRes)
+```
+
+Output of glmnet illustrates change in the contributions of each of the predictors as amount of shrinkage changes. Unline Ridge regression, the contribution variables are not observed for some range of shrinkage changes. For example the blue line indicates that the coefficient is 0 upto L1 norm is 0.5. Similarly for other variables.
+```{r}
+predict(lassoRes,type="coefficients",s=cvLassoRes$lambda.1se)
+predict(lassoRes,type="coefficients",s=cvLassoRes$lambda.min)
+```
+
+The coefficients corresponding to lowest average MSE is achieved when the S is set to lambda.min field. The coefficient of citric acid is 0. When S is set to lambda.1se field the coefficient of citric acid, total sulfur dioxide and density is equal to 0.
+
+Ridge regression for Red wine:
+
+```{r}
+x <- model.matrix(quality~.,RedWine)[,-1]
+y <- RedWine[,"quality"]
+ridgeRes <- glmnet(scale(x),y,alpha=0)
+plot(ridgeRes)
+cvRidgeRes <- cv.glmnet(scale(x),y,alpha=0)
+plot(cvRidgeRes)
+
+```
+
+Output of glmnet illustrates change in the contributions of each of the predictors as amount of shrinkage changes. The contribution variables are observed for range of shrinkage changes. 
+
+Output of cv.glmnet shows averages and variabilities of MSE in cross-validation across different levels of regularization. lambda.min field indicates values of ?? (0.042) at which the lowest average MSE has been achieved, lambda.1se shows larger ?? (more regularization) that has MSE 1SD (of cross-validation) higher than the minimum - this is an often recommended ?? (0.43) to use under the idea that it will be less susceptible to overfit. 
+
+The below are coefficients for ridge regression for the fields lambda.min and lambda.lse 
+```{r}
+cvRidgeRes$lambda.min
+predict(ridgeRes,type="coefficients",s=cvRidgeRes$lambda.min)
+
+cvRidgeRes$lambda.1se
+predict(ridgeRes,type="coefficients",s=cvRidgeRes$lambda.1se)
+```
+```{r}
+# and with lambda's other than default:
+cvRidgeRes <- cv.glmnet(x,y,alpha=0,lambda=10^((-80:80)/20))
+plot(cvRidgeRes)
+ridgeResScaled <- glmnet(scale(x),y,alpha=0)
+cvRidgeResScaled <- cv.glmnet(scale(x),y,alpha=0)
+predict(ridgeResScaled,type="coefficients",s=cvRidgeResScaled$lambda.1se)
+```
+
+Above is the coefficients for ridge regression for the fields with lambda other than default.
+
+Lasso Regression for Red Wine:
+```{r}
+lassoRes <- glmnet(scale(x),y,alpha=1)
+plot(lassoRes)
+cvLassoRes <- cv.glmnet(scale(x),y,alpha=1)
+plot(cvLassoRes)
+```
+
+Output of glmnet illustrates change in the contributions of each of the predictors as amount of shrinkage changes. Unlike Ridge regression, the contribution variables are not observed for some range of shrinkage changes. For example the green line indicates that the coefficient is 0 upto L1 norm is 0.6. Similarly for other variables.
+
+The coefficients corresponding to lowest average MSE is achieved when the S is set to lambda.min field. The coefficient of fixed acidity, citric acid and density is 0. When S is set to lambda.1se field the coefficient of citric acid, residual sugar, free sulfur dioxide and density is equal to 0.
+
+```{r}
+predict(lassoRes,type="coefficients",s=cvLassoRes$lambda.1se)
+predict(lassoRes,type="coefficients",s=cvLassoRes$lambda.min)
+```
+
+# PCA 
+
+
+```{r}
+RedWine1 <- RedWine
+RedWine1$type <- 1
+WhiteWine1 <- WhiteWine
+WhiteWine1$type <- 2
+WineDat <- rbind(WhiteWine,RedWine)
+WineDat1 <- rbind(WhiteWine1,RedWine1)
+WineDat <- subset( WineDat, select = -quality )
+PCAscaled = prcomp(WineDat,scale = TRUE)
+cols<-brewer.pal(n=3,name="Set1")
+cols_t1<-cols[WineDat1$type]
+plot(PCAscaled$x[,1:2],col = cols_t1, pch=16)
+
+
+
+
+```
+
+The above chart is a biplot for first two principal components, different colors indicating the wine types. It looks like there is clear association between the wine types with PCs. The data points with PC1>0 are of one wine type and the data points with PC1 < 0 are of another wine type except for few exceptions.
+
+Below graph tries to plot the first two principal components with wine quality.
+```{r}
+cols_quality<-brewer.pal(n=3,name="Set1")
+cols_quality_t1<-cols[WineDat1$quality]
+plot(PCAscaled$x[,1:2],col = cols_quality_t1, pch=16)
+```
+
+# Modeling wine quality using principal components
+
+
+```{r}
+WhiteWinePca <- subset(WhiteWine, select = -quality)
+PCAscaledWhiteWine = prcomp(WhiteWinePca,scale = TRUE)
+PCAscaledWhiteWine$x <- cbind(PCAscaledWhiteWine$x, quality = subset(WhiteWine, select = quality))
+summaryMetrics <- NULL
+whichAll <- list()
+
+for ( myMthd in c("exhaustive", "backward", "forward") ) {
+  rsRes <- regsubsets(quality~.,as.data.frame(PCAscaledWhiteWine$x),method=myMthd,nvmax=10)
+  summRes <- summary(rsRes)
+  whichAll[[myMthd]] <- summRes$which
+  for ( metricName in c("rsq","rss","adjr2","cp","bic") ) {
+    summaryMetrics <- rbind(summaryMetrics,
+      data.frame(method=myMthd,metric=metricName,
+                nvars=1:length(summRes[[metricName]]),
+                value=summRes[[metricName]]))
+  }
+}
+ggplot(summaryMetrics,aes(x=nvars,y=value,shape=method,colour=method)) + geom_path() + geom_point() + facet_wrap(~metric,scales="free") +   theme(legend.position="top")
+
+```
+
+Above graphs show the exhaustive, backward and forward methods performed for PCAs. The optimal number of variables in this case 5 as opposed to 7 variables in original fit. The values for Error, Adjusted R squared etc are comparable to the original fit indicating that same level of model fit can be obtained by less number of principal components. 
+
+ 
