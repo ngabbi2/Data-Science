@@ -1,0 +1,540 @@
+---
+title: 'Census Income'
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RColorBrewer)
+library(randomForest)
+library(caTools)
+library(ISLR)
+library(e1071)
+library(ggplot2)
+library(caret)
+library(lmtest)
+```
+
+
+# Data Cleaning & Association tests
+
+
+Read the adult.data and adult.test data and combined both of them together
+```{r}
+adultDat <- read.table("adult.data",sep=",")
+adultNames <- c("age","workclass","fnlwgt","education","educationnum","maritalstatus","occupation","relationship","race","sex","capitalgain","capitalloss","hoursperweek","nativecountry","Income")
+colnames(adultDat) <- adultNames
+adultDat1 <- read.table("adult.test",sep = ",",skip = 1)
+colnames(adultDat1) <- adultNames
+adultDat <- rbind(adultDat,adultDat1)
+```
+
+Identified '?' data and removed them from analysis
+```{r}
+
+adultDat[adultDat==' ?'] <- NA
+adultDat <- na.omit(adultDat)
+str(adultDat)
+
+```
+
+
+Contingency table for education shows different levels of education and corresponding number of records. 
+```{r}
+table(adultDat$education)
+```
+
+The education levels are grouped into subset of groups but still conveying the same meaning as before subsetting.
+```{r}
+levels(adultDat$education)
+levels(adultDat$education) <- c("HSGrad", "HSGrad", "HSGrad","UptoMiddle","UptoMiddle","UptoMiddle","HSGrad","UptoCollege","UptoCollege","Bachelors","Doctorate","HSGrad","Masters","UptoMiddle","UptoCollege","UptoCollege")
+table(adultDat$education)
+
+```
+
+Contingency table for working class shows many levels. This can be combined to form fever levels but essentially conveying the same meaning
+```{r}
+table(adultDat$workclass)
+```
+
+The number of records in Never-Worked and Without-pay put together is very low (approx 0.04%), the records are not enough to identify significant impact. Hence they can be removed.
+```{r}
+adultDat <- subset(adultDat, (workclass != " Never-worked" & workclass != " Without-pay"))
+```
+
+```{r}
+
+levels(adultDat$workclass)
+levels(adultDat$workclass) <- c("GovEmp", "GovEmp", "GovEmp","Private","Private","SelfEmp","SelfEmp","GovEmp","Private")
+
+table(adultDat$workclass)
+```
+
+
+Contingency table for marital shows many levels. This can be combined to form fever levels but essentially conveying the same meaning
+```{r}
+table(adultDat$maritalstatus)
+
+```
+
+
+
+```{r}
+levels(adultDat$maritalstatus)
+levels(adultDat$maritalstatus) <- c("NotMarried", "Married", "Married","Married","NotMarried","NotMarried","NotMarried")
+table(adultDat$maritalstatus)
+
+```
+
+Armed forces has very limited amount of data that is not useful in showing the impact on entire population. Hence we can remove that from our analysis
+```{r}
+table(adultDat$occupation)
+levels(adultDat$occupation)
+```
+
+```{r}
+adultDat <- subset(adultDat, (occupation != " Armed-Forces"))
+levels(adultDat$occupation) <- c("Sales", "Admclerical","Sales","Craftrepair","Execmanagerial", " Farmingfishing", " Handlerscleaners"," Machineopinspct"," Otherservice","Privhouseserv", " Profspecialty", "Protectiveserv", "Sales", " Techsupport","Transportmoving" )
+
+```
+
+
+```{r}
+table(adultDat$relationship)
+```
+
+```{r}
+table(adultDat$race)
+
+```
+
+```{r}
+table(adultDat$sex)
+```
+
+Country has many levels for a categorical variable. Grouping the country based on location into continents would be ideal.
+```{r}
+table(adultDat$nativecountry)
+```
+
+```{r}
+levels(adultDat$nativecountry)
+```
+
+```{r}
+levels(adultDat$nativecountry) <- c("Asia","Asia","NorthAmerica","Asia","SouthAmerica","NorthAmerica","NorthAmerica","SouthAmerica","NorthAmerica","Europe","Europe","Europe","Europe","Europe","NorthAmerica","NorthAmerica","Europe","NorthAmerica","Asia","Europe","Asia","Asia","Europe","Europe","NorthAmerica","Asia","Asia","NorthAmerica","NorthAmerica","NorthAmerica","SouthAmerica","Asia","Europe","Europe","NorthAmerica","Europe","Asia","Asia","Asia","NorthAmerica","NorthAmerica","Asia","Europe")
+```
+
+```{r}
+table(adultDat$nativecountry)
+```
+
+converting different representation of Income variable into one form. 
+```{r}
+levels(adultDat$Income)
+levels(adultDat$Income) <- c("0", "1", "0","1")
+table(adultDat$Income)
+```
+
+Out of total of 45187 observations Capital loss has 97 unique records and 43049 records with value 0. The outcome will have very little influence over difference in values rather than 0. i.e., the value 0 will dominate the model in analysis and other values have very little influence over the entire model. We could potentially remove this column without having much impact on the final model. Let us check that with model accuracy.
+```{r}
+nrow(adultDat[adultDat$capitalloss==0,])
+length(unique(adultDat$capitalloss))
+
+```
+
+The above observation stands for capitalgain as well.
+```{r}
+nrow(adultDat[adultDat$capitalgain==0,])
+length(unique(adultDat$capitalgain))
+
+```
+Some variables are slightly skewed indicating scope for transformation.
+```{r}
+
+hist(adultDat$age,col=2)
+hist(adultDat$capitalgain)
+hist(adultDat$capitalloss)
+hist(adultDat$hoursperweek)
+
+```
+
+
+
+
+
+The chi square test proves that workclass, education, marital status, relationship, race and sex are associated with outcome Income variable
+```{r}
+chisq.test(adultDat$workclass,adultDat$Income)
+```
+```{r}
+chisq.test(adultDat$education,adultDat$Income)
+```
+```{r}
+chisq.test(adultDat$maritalstatus,adultDat$Income)
+```
+```{r}
+chisq.test(adultDat$relationship,adultDat$Income)
+```
+```{r}
+chisq.test(adultDat$race,adultDat$Income)
+```
+```{r}
+chisq.test(adultDat$sex,adultDat$Income)
+```
+
+
+
+fnlwgt has 26725 unique records and is not related to the dataset, Hence it can be removed from the analysis.
+```{r}
+length(unique(adultDat$fnlwgt))
+```
+Education number is a numeric representation of education categorical variable. Both convey the same meaning, hence it can be removed
+```{r}
+adultDat_Final <- adultDat[,-c(3,5)]
+
+```
+
+
+The P values against each continues variable in logistic regression show that the variables are significant towards the Income variable
+```{r}
+glm.fits <- glm(adultDat_Final$Income~adultDat$age+adultDat$capitalgain+adultDat$capitalloss+adultDat$hoursperweek,data = adultDat_Final,family = binomial)
+summary(glm.fits)
+```
+
+Using Model.Matrix to convert categorical values into dummy variables for PCA analysis. The first column, which is an intercept has to be removed. The input is scaled for PCA.
+```{r}
+mmodel.mt = model.matrix(~.,adultDat_Final)
+mmodel.mt1=mmodel.mt[,-c(1)]
+pc.t = prcomp(mmodel.mt1,scale=T)
+```
+
+The below graph shows the first two principal components and data points representing sex is represented using colors.
+```{r}
+cols<-brewer.pal(n=3,name="Set1")
+cols_t1<-cols[adultDat_Final$sex]
+plot(pc.t$x[,1:2],col = cols_t1,pch=16)
+```
+
+```{r}
+#model.matrix(~ workclass+education+maritalstatus+race+sex+nativecountry, data=adultDat, 
+#    contrasts.arg=list(workclass=diag(nlevels(adultDat$workclass)), education=diag(nlevels(adultDat$education)),maritalstatus=diag(nlevels(adultDat$maritalstatus)), #race=diag(nlevels(adultDat$race)),sex=diag(nlevels(adultDat$sex)),nativecountry=diag(nlevels(adultDat$nativecountry))))
+```
+
+```{r}
+cor(adultDat_Final[,c(1,9,10,11)])
+```
+
+# Logistic regression:
+
+
+Logistic regression is fitted to understand the importance of variables on the outcome variable i.e., Income.Interesting observation from the logistic regression output is that few factors in the categorical variables are not impacting the outcome Income variable but other factors belonging to the same categorical variable has impact on the output variable. For Example: in workclass selfemp does not have considerable impact where as workclass private has an impact. The variables impacting outcome variable in logistic regression are education, relationship,hoursperweek. Capitalgain and capitalloss has very low coefficient meaning they have slight impact on the output variable.
+```{r}
+glmRes <- glm(Income~.,family= binomial(link='logit'),data=adultDat_Final)
+
+summary(glmRes)
+```
+
+We test for nativecountry and the P-Value is less than 0.05 so we reject the null hypothesis that reduce model is better. Hence native country is relevant
+```{r}
+glmRes_nativecountry <- glm(Income~age+workclass+education+maritalstatus+occupation+relationship+race+sex+capitalgain+capitalloss+hoursperweek,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_nativecountry)
+
+```
+
+`
+
+```{r}
+glmRes_capitalloss<- glm(Income~age+workclass+education+maritalstatus+occupation+relationship+race+sex+capitalgain+hoursperweek+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_capitalloss)
+```
+
+```{r}
+glmRes_hoursperweek<- glm(Income~age+workclass+education+maritalstatus+occupation+relationship+race+sex+capitalgain+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_hoursperweek)
+```
+
+
+```{r}
+glmRes_capitalgain<- glm(Income~age+workclass+education+maritalstatus+occupation+relationship+race+sex+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_capitalgain)
+```
+
+```{r}
+glmRes_sex<- glm(Income~age+workclass+education+maritalstatus+occupation+relationship+race+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_sex)
+```
+
+```{r}
+glmRes_race<- glm(Income~age+workclass+education+maritalstatus+occupation+relationship+sex+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_race)
+```
+
+```{r}
+glmRes_relationship<- glm(Income~age+workclass+education+maritalstatus+occupation+race+sex+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_relationship)
+```
+
+```{r}
+glmRes_occupation<- glm(Income~age+workclass+education+maritalstatus+relationship+race+sex+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_occupation)
+```
+
+```{r}
+glmRes_maritalstatus<- glm(Income~age+workclass+education+occupation+relationship+race+sex+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_maritalstatus)
+```
+
+```{r}
+glmRes_education<- glm(Income~age+workclass+maritalstatus+occupation+relationship+race+sex+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_education)
+```
+
+```{r}
+glmRes_workclass<- glm(Income~age+education+maritalstatus+occupation+relationship+race+sex+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_workclass)
+```
+
+```{r}
+glmRes_age<- glm(Income~workclass+education+maritalstatus+occupation+relationship+race+sex+capitalgain+hoursperweek+capitalloss+nativecountry,family= binomial(link='logit'),data=adultDat_Final)
+lrtest(glmRes, glmRes_age)
+```
+
+From the likelihood ratio tests performed above the highest impact variables are the ones with least P value age, education, occupation, relationship, sex, capitalgain, capitalloss.
+
+Though other variables are significant, the variables with relatively less impact are maritalstatus, workclass, race, hoursperweek, nativecountry. 
+
+The below method calculates Accuracy, Sensitivity and Specificity. This method will be reused in the below code
+```{r}
+assess.prediction=function(truth,predicted){
+  predited = predicted[!is.na(truth)]
+  truth = truth[!is.na(truth)]
+  truth = truth[!is.na(predicted)]
+  predicted = predicted[!is.na(predicted)]
+
+  TP = sum(truth==1 & predicted==1)
+  TN = sum(truth==0 & predicted==0)
+  FP = sum(truth==0 & predicted==1)
+  FN = sum(truth==1 & predicted==0)
+  
+  P = TP+FN
+  N = FP+TN
+
+  acc = sum(truth == predicted)/length(truth)
+  Sens = TP/P  
+  Spec = TN/N
+  return(list(acc,Sens,Spec))
+
+
+}
+```
+
+Cross validation is performed with split ratio of .75 to .25 for training and testing dataset. The results are captured in Fullres data frame.
+```{r}
+Train.Results <- data.frame("acc"=integer(0),"Sens"=integer(0),"Spec"=integer(0))
+Test.Results <- data.frame("acc"=integer(0),"Sens"=integer(0),"Spec"=integer(0))
+Fullres<- NULL
+nTries <- 30
+for ( iTry in 1:nTries ) {
+  Split <- sample.split(adultDat_Final$Income, SplitRatio = 0.75)
+  Trainadult <- subset(adultDat_Final, Split == TRUE)  
+  Testadult <- subset(adultDat_Final, Split == FALSE)  
+  glmRes <- glm(Income~.,data=Trainadult,family="binomial")
+  pred = predict(glmRes,Trainadult,type="response")
+  predtest = predict(glmRes,Testadult,type="response")
+  
+  test <- assess.prediction(Trainadult$Income,ifelse(pred>0.5,1,0))
+  Train.Results[nrow(Train.Results)+1,] <- c(test[[1]],test[[2]],test[[3]])
+
+  test1<-   assess.prediction(Testadult$Income,ifelse(predtest>0.5,1,0))
+  Test.Results[nrow(Test.Results)+1,] <- c(test1[[1]],test1[[2]],test1[[3]])
+  
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="acc",val=c(test[[1]],test1[[1]]),traintest=c("Train","Test")))
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="Sens",val=c(test[[2]],test1[[2]]),traintest=c("Train","Test")))
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="Spec",val=c(test[[3]],test1[[3]]),traintest=c("Train","Test")))
+}
+
+```
+
+Accuracy, Sensitivity and Specificity are plotted in the graph below for each iteration of cross validation.
+```{r}
+ggplot(Fullres,aes(x=factor(vars),y=val,colour=sel)) + geom_boxplot()+facet_wrap(~traintest)+scale_x_discrete(breaks = seq(1, 30, by = 2))
+```
+
+Calculating the average Accuracy, Sensitivity and Specificity for Training and Testing data set. 
+```{r}
+Train_avg_acc <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="acc"))$val)*100/nTries,3)
+Train_avg_sens <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="Sens"))$val)*100/nTries,3)
+Train_avg_spec <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="Spec"))$val)*100/nTries,3)
+
+Test_avg_acc <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="acc"))$val)*100/nTries,3)
+Test_avg_sens <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="Sens"))$val)*100/nTries,3)
+Test_avg_spec <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="Spec"))$val)*100/nTries,3)
+```
+
+
+```{r}
+sprintf("Training Accuracy, Sensitivity and Specificity of Logistic Regression are %g, %g, %g respective",Train_avg_acc,Train_avg_sens,Train_avg_spec)
+sprintf("Testing Accuracy, Sensitivity and Specificity of Logistic Regression are %g, %g, %g respective",Test_avg_acc,Test_avg_sens,Test_avg_spec)
+```
+
+The accuracy of logistic regression is close to Naive Bayes (83.8) as described in the data set description. It performs better than Nearest neighbours with K =1 and 3 (approx accuracy 80%)
+
+
+
+
+#Random forest
+
+Fitting random forest on the entire dataset to get the feel of data and the model.
+```{r}
+randomf = randomForest(Income~., data=adultDat_Final)
+pred = predict(randomf,adultDat_Final,type = "response")
+```
+
+
+The variable importance plot shows the important variables across y axis in the order of importance. Top 4 most important variables are capitalgain, relationship, age and occupation. The least 4 important variables are workclass, race, sex and nativecountry. The variable sex is relatvely low impact variable in Random Forest unlike logistic regression. Capital loss has high impact in logistic regression but has middle to low impact in RandomForest. Marital Status is relatively low impact in Logistic regression compared to Random Forest. Majority of the variables are still the same in terms of impact on output variable in both the models.
+
+```{r}
+varImpPlot(randomf,type=2)
+```
+
+using Cross validation to get the out of bag error, test error, sensitivity and specificity in case of training and test sample.
+```{r}
+
+Fullres<- NULL
+nTries <- 30
+for ( iTry in 1:nTries ) {
+  Split <- sample.split(adultDat_Final$Income, SplitRatio = 0.75)
+  Trainadult <- subset(adultDat_Final, Split == TRUE)  
+  Testadult <- subset(adultDat_Final, Split == FALSE)  
+  rf <- randomForest(Income~.,data=Trainadult)
+  pred = predict(rf,Trainadult,type="response")
+  predtest = predict(rf,Testadult,type="response")
+  
+  test <- assess.prediction(Trainadult$Income,pred)
+
+  test1<-   assess.prediction(Testadult$Income,predtest)
+
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="acc",val=c(1-rf$err.rate[nrow(rf$err.rate),"OOB"]
+,test1[[1]]),traintest=c("Train","Test")))
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="Sens",val=c(test[[2]],test1[[2]]),traintest=c("Train","Test")))
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="Spec",val=c(test[[3]],test1[[3]]),traintest=c("Train","Test")))
+}
+
+```
+
+
+```{r}
+Rf_Train_avg_acc <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="acc"))$val)*100/nTries,3)
+Rf_Train_avg_sens <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="Sens"))$val)*100/nTries,3)
+Rf_Train_avg_spec <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="Spec"))$val)*100/nTries,3)
+
+Rf_Test_avg_acc <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="acc"))$val)*100/nTries,3)
+Rf_Test_avg_sens <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="Sens"))$val)*100/nTries,3)
+Rf_Test_avg_spec <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="Spec"))$val)*100/nTries,3)
+```
+
+```{r}
+ggplot(Fullres,aes(x=factor(vars),y=val,colour=sel)) + geom_boxplot()+facet_wrap(~traintest)+scale_x_discrete(breaks = seq(1, 30, by = 2))
+```
+
+
+```{r}
+sprintf("Training Out of Bag, Sensitivity and Specificity of Logistic Regression are %g, %g, %g respective",Rf_Train_avg_acc,Rf_Train_avg_sens,Rf_Train_avg_spec)
+sprintf("Testing Accuracy, Sensitivity and Specificity of Logistic Regression are %g, %g, %g respective",Rf_Test_avg_acc,Rf_Test_avg_sens,Rf_Test_avg_spec)
+```
+
+The Training and Testing accuracy for Random Forest is better than Logistic regression. This model outperforms many models (Naive Bayes 83.88, NBTree 85.9, Knn 80) given in the dataset description. 
+
+# SVM 
+
+
+As the performance is hugely impacted by SVM. To choose the parameters only 10% of the records (approx 4500) are considered. The best performance model is obtained at cost =1 and gamma = 0.5
+```{r}
+
+test_data = adultDat_Final[sample(nrow(adultDat_Final), 4500), ]
+
+```
+
+
+```{r}
+  tune.out=tune(svm, Income~., data=test_data, kernel="radial",ranges=list(cost=c(0.1,1,10,100),gamma=c(0.5,1,2,3)))
+  print(tune.out$best.parameters)
+  print(tune.out$best.performance)
+```
+
+Cross validation is done on 10 iterations, for 4500 random samples and test and train accuracy, sensitiviy and specificity are captured.
+```{r}
+test_data = adultDat_Final[sample(nrow(adultDat_Final), 4500), ]
+Fullres<- NULL
+nTries <- 10
+for ( iTry in 1:nTries ) {
+  Split <- sample.split(test_data$Income, SplitRatio = 0.75)
+  Trainadult <- subset(test_data, Split == TRUE)  
+  Testadult <- subset(test_data, Split == FALSE)  
+  tune.out=tune(svm, Income~., data=test_data, kernel="radial",ranges=list(cost=c(1),gamma=c(0.5)))
+
+
+
+  pred = predict(tune.out$best.model,newdata=Trainadult)
+  predtest = predict(tune.out$best.model,newdata=Testadult)
+  
+  test <- assess.prediction(Trainadult$Income,pred)
+
+  test1<-   assess.prediction(Testadult$Income,predtest)
+
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="acc",val=c(test[[1]],test1[[1]]),traintest=c("Train","Test")))
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="Sens",val=c(test[[2]],test1[[2]]),traintest=c("Train","Test")))
+  Fullres <- rbind(Fullres,data.frame(vars=iTry,sel="Spec",val=c(test[[3]],test1[[3]]),traintest=c("Train","Test")))
+}
+```
+
+
+
+```{r}
+Svm_Train_avg_acc <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="acc"))$val)*100/nTries,3)
+Svm_Train_avg_sens <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="Sens"))$val)*100/nTries,3)
+Svm_Train_avg_spec <- signif(sum(subset(Fullres,(traintest == "Train"&sel=="Spec"))$val)*100/nTries,3)
+
+Svm_Test_avg_acc <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="acc"))$val)*100/nTries,3)
+Svm_Test_avg_sens <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="Sens"))$val)*100/nTries,3)
+Svm_Test_avg_spec <- signif(sum(subset(Fullres,(traintest == "Test"&sel=="Spec"))$val)*100/nTries,3)
+```
+
+```{r}
+ggplot(Fullres,aes(x=factor(vars),y=val,colour=sel)) + geom_boxplot()+facet_wrap(~traintest)
+```
+
+
+```{r}
+sprintf("Training Accuracy, Sensitivity and Specificity of Logistic Regression are %g, %g, %g respective",Svm_Train_avg_acc,Svm_Train_avg_sens,Svm_Train_avg_spec)
+sprintf("Testing Accuracy, Sensitivity and Specificity of Logistic Regression are %g, %g, %g respective",Svm_Test_avg_acc,Svm_Test_avg_sens,Svm_Test_avg_spec)
+```
+
+The accuracy for SVM is very high at 89%. This accuracy is better than all the models mentioned in the data set description. But the high accuracy can be debated as we took very small sample of the data because of performance issues. 
+
+# Comparing logistic regression, random forest and SVM model performance
+
+Compare performance of the models developed above (logistic regression, random forest, SVM) in terms of their accuracy, error and sensitivity/specificity.  Comment on differences and similarities between them.
+
+```{r}
+Fullres1 <- NULL
+Fullres1 <- rbind(Fullres1,data.frame(vars1="Log",sel="acc",val=c(Train_avg_acc,Test_avg_acc),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="RF",sel="acc",val=c(Rf_Train_avg_acc,Rf_Test_avg_acc),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="SVM",sel="acc",val=c(Svm_Train_avg_acc,Svm_Test_avg_acc),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="Log",sel="Sens",val=c(Train_avg_sens,Test_avg_sens),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="RF",sel="Sens",val=c(Rf_Train_avg_sens,Rf_Test_avg_sens),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="SVM",sel="Sens",val=c(Svm_Train_avg_sens,Svm_Test_avg_sens),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="Log",sel="Spec",val=c(Train_avg_spec,Test_avg_spec),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="RF",sel="Spec",val=c(Rf_Train_avg_spec,Rf_Test_avg_spec),traintest=c("Train","Test")))
+Fullres1 <- rbind(Fullres1,data.frame(vars1="SVM",sel="Spec",val=c(Svm_Train_avg_spec,Svm_Test_avg_spec),traintest=c("Train","Test")))
+ggplot(Fullres1,aes(x=vars1,y=val,colour=sel)) + geom_boxplot()+facet_wrap(~traintest)
+
+```
+
+Comparing the three models logistic regression, random forest and SVM. SVM has the highest accuracy on test and train data, next comes Random Forest and then Logistic Regression. However it has to be noted that SVM is performed only on 10% of the entire data and for only cross validation of 10 sets where as Random Forest and Logistic regression was performed on entire data with cross validation of 30 sets. Hence Random Forest and Logistic regression can be considered as stable results or reliable results. Logistic regression performs almost similar on both training sample and testing sample implicating that it is very extendable. On the other hand though the accuracy is high for Random Forest the performance goes down on the test sample. 
+
+
+
